@@ -26,6 +26,8 @@ open my $log_fh, '>>', "$properties{'logfile'}";
 *STDOUT = $log_fh;
 *STDERR = $log_fh;
 
+print DATETIME, " Conversion utility started.\n";
+
 # Create a shell script file to get list of modified files from ACR
 open REMOTE_SCRIPT, '>' , $properties{'SSH_script_temp_file'} or die DATETIME, " Failed to create shell script file to get list of modified files from ACR : $!\n";
 
@@ -57,8 +59,6 @@ while (<SSH_OUTPUT>)
   # Put WAV file name in downloader shell script
   s/(.*)\.xml$/$1.wav/;
   print SCP_TEMP_FILE "$properties{'SCP_binary'} $properties{'ACR_user'}\@$properties{'ACR_server'}:$properties{'ACR_calls_directory_root'}$_ $properties{'SCP_download_temp_target_dir'}\n";
-  
-  print $_,"\n";
 }
 
 my $scp_script_size = tell SCP_TEMP_FILE;
@@ -130,6 +130,8 @@ if ($scp_script_size >0)
 
   system("$properties{'RM_binary'} -f $properties{'SCP_download_temp_target_dir'}/*.xml") == 0 or warn DATETIME, " Failed to remove downloaded xml files: $!\n";
   system("$properties{'RM_binary'} -f $properties{'SCP_download_temp_target_dir'}/*.wav") == 0 or warn DATETIME, " Failed to remove downloaded voice files: $!\n";
+
+  print DATETIME, " Conversion done: exiting cleanly.\n";
 } else {
   print DATETIME, " No voice files match download criteria: exiting cleanly\n";
 }
