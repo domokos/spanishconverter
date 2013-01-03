@@ -38,7 +38,7 @@ print REMOTE_SCRIPT "find . -name \"*.xml\" -type f -mmin -$properties{'ACR_call
 close REMOTE_SCRIPT;
 
 # Execute the script remotely to detect modified voice files
-my $ssh_child_pid = open SSH_OUTPUT, "$properties{'SSH_binary'} -T $properties{'ACR_user'}\@$properties{'ACR_server'} <$properties{'SSH_script_temp_file'} |" or die DATETIME , " Failed to execute the script remotely to detect modified voice files: $!\n";
+open SSH_OUTPUT, "$properties{'SSH_binary'} -T $properties{'ACR_user'}\@$properties{'ACR_server'} <$properties{'SSH_script_temp_file'} |" or die DATETIME , " Failed to execute the script remotely to detect modified voice files: $!\n";
 
 my @files_to_download;
 
@@ -100,38 +100,48 @@ if ($scp_script_size >0)
       # Parse the XML file to see if the recording is closed and to extract splitting parameters
       while (<XMLFILE>)
       {
-	chomp;
-	# File is eligible for conversion if the <noend> tag holds a "false" value
-	/<noend>false<\/noend>/ and $file_needs_conversion = 1;
-		
-	# Find the segmentation tag and extract segmentation rules
-	if (/<$properties{'segmentation_tag'}>(.*)<\/$properties{'segmentation_tag'}>/)
-	{
-	  s/<$properties{'segmentation_tag'}>(.*)<\/$properties{'segmentation_tag'}>/$1/;
-	  s/,/ /g;
-	  $segmentation_rule = $_;
-	}
+        chomp;
+        # File is eligible for conversion if the <noend> tag holds a "false" value
+        /<noend>false<\/noend>/ and $file_needs_conversion = 1;
+
+        # Find the segmentation tag and extract segmentation rules
+        if (/<$properties{'segmentation_tag'}>(.*)<\/$properties{'segmentation_tag'}>/)
+        {
+          s/<$properties{'segmentation_tag'}>(.*)<\/$properties{'segmentation_tag'}>/$1/;
+          s/,/ /g;
+          $segmentation_rule = $_;
+        }
       }
       close XMLFILE;
       
       $file_needs_conversion and print SEGMENTATION_TEMP_SCRIPT_FILE "$properties{'mp3slpitter_command'} $wav_file_to_convert $segmentation_rule\n";
       print DATETIME, " Voice file: $wav_file_to_convert still recording. No conversion performed.\n" unless $file_needs_conversion;
   }
-
+  
+  my $segmentation_script_size = tell SEGMENTATION_TEMP_SCRIPT_FILE;
+  
   close SEGMENTATION_TEMP_SCRIPT_FILE;
 
-  # Perform file conversion and splitting
-  system ("$properties{'BASH_binary'} $properties{'segmentation_script_temp_file'}") == 0 or die DATETIME, " Failed to perform file conversion and splitting: $!\n";
+  if ($segmentation_script_size > 0)
+  {
+    # Perform file conversion and splitting
+    system ("$properties{'BASH_binary'} $properties{'segmentation_script_temp_file'}") == 0 or die DATETIME, " Failed to perform file conversion and splitting: $!\n";
 
-  # Remove temp conversion file
-  unlink($properties{'segmentation_script_temp_file'}) == 1 or warn DATETIME, " Failed to remove temp conversion file: $!\n";
+    # Remove temp segmentation and conversion script file
+    unlink($properties{'segmentation_script_temp_file'}) == 1 or warn DATETIME, " Failed to remove temp segmentation and conversion script file: $!\n";
 
-  # Remove downloaded voice and xml files
+    # Remove downloaded voice and xml files
 
-  system("$properties{'RM_binary'} -f $properties{'SCP_download_temp_target_dir'}/*.xml") == 0 or warn DATETIME, " Failed to remove downloaded xml files: $!\n";
-  system("$properties{'RM_binary'} -f $properties{'SCP_download_temp_target_dir'}/*.wav") == 0 or warn DATETIME, " Failed to remove downloaded voice files: $!\n";
+    system("$properties{'RM_binary'} -f $properties{'SCP_download_temp_target_dir'}/*.xml") == 0 or warn DATETIME, " Failed to remove downloaded xml files: $!\n";
+    system("$properties{'RM_binary'} -f $properties{'SCP_download_temp_target_dir'}/*.wav") == 0 or warn DATETIME, " Failed to remove downloaded voice files: $!\n";
 
-  print DATETIME, " Conversion done: exiting cleanly.\n";
+    print DATETIME, " Conversion done: exiting cleanly.\n";
+  } else {
+    # Remove temp segmentation and conversion script file
+    unlink($properties{'segmentation_script_temp_file'}) == 1 or warn DATETIME, " Failed to remove empty temp segmentation and conversion script file: $!\n";
+
+    print DATETIME, " No downloaded files need conversion - all in recording: exiting cleanly.\n";
+  }
 } else {
   print DATETIME, " No voice files match download criteria: exiting cleanly\n";
 }
