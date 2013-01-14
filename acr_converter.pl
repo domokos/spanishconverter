@@ -18,11 +18,14 @@ my $config_section = "NONE";
 my $global_configured = 0;
 my $num_acr_servers = 0;
 
+# Read the config file
 while (<CONFIG>)
   {
   $config_linenum++;
    unless ( m/^\s*#.*$/ or m/^\s*$/)
    {
+   # Branch states of config file processing and set parameter variables accordingly
+   # Reading outside of any secrions
     if($config_section eq "NONE")
     {
       if (!$global_configured)
@@ -30,51 +33,53 @@ while (<CONFIG>)
 	m/^\s*\[Global\]\s*$/ or die  DATETIME, " Error in config file. Config does not start with a [Global] section at line number: $config_linenum\n";
 	$config_section = "GLOBAL";
       } else {
-	m/^\s*\[ACR_server\]\s*$/ or die  DATETIME, " Error in config file. Invalid section start: the [Global] section must be followed by one or more [ACR_Server] sections at line number: $config_linenum\n";
+	m/^\s*\[ACR_server\]\s*$/ or die  DATETIME, " Error in config file. Expecting [ACR_server] or end of file: the [Global] section must be followed by zero or more [ACR_Server] sections at line number: $config_linenum\n";
 	$config_section = "ACR_SERVER";
 	$num_acr_servers++;
       }
+    # Reading Global section
     } elsif ($config_section eq "GLOBAL") {
       if (m/\s*\w+\s*=\s*.+\s*/)
       {
 	($name,$val)=m/\s*(\w+)\s*=\s*(.+)\s*/;
 	$properties{$name}=$val;
-	print $name," = ",$val,"\n";
       } elsif (m/^\s*\[END Global\]\s*$/) {
 	$global_configured = 1;
 	$config_section = "NONE";
       } else {
 	die DATETIME, " Invalid config file entry at line number: $config_linenum\n";
       }
+    # Reading ACR_SERVER section
     } elsif ($config_section eq "ACR_SERVER") {
       if (m/\s*\w+\s*=\s*.+\s*/)
       {
 	($name,$val)=m/\s*(\w+)\s*=\s*(.+)\s*/;
 	$acr_servers[$num_acr_servers]{$name}=$val;
-	print "ACR_server num $num_acr_servers: ", $name," = ",$val,"\n";
       } elsif (m/^\s*\[END ACR_server\]\s*$/) {
 	$config_section = "NONE";
       } else {
 	die DATETIME, " Invalid config file entry at line number: $config_linenum\n";
       }
-    
     }
    }
   }
 close(CONFIG);
 
+# Cross-check validity of config file contents
 $config_section eq "NONE" or die DATETIME, " Error in config file. Unterminated section at the end of file.\n";
 if ($num_acr_servers == 0)
 {
-  print DATETIME, " No ACR servers configured: exiting cleanly\n";
+  print DATETIME, " No ACR servers configured: Exiting cleanly\n";
   exit 0;
 }
 
+# Check required General parameters
 foreach my $key ("SCP_script_temp_file", "SCP_download_temp_target_dir", "SSH_script_temp_file", "segmentation_tag", "segmentation_script_temp_file", "output_directory", "mp3slpitter_command", "SSH_binary", "SCP_binary", "BASH_binary", "RM_binary", "logfile")
 {
   $properties{$key} or die DATETIME, " Error: Required global parameter $key is not defined in config file.\n";
 }
 
+# Check required ACR server parameters
 foreach my $key ("ACR_server", "ACR_user", "ACR_calls_directory_root", "ACR_call_download_window_minutes")
 {
   for(my $i=1; $i<=$num_acr_servers;$i++)
@@ -83,135 +88,145 @@ foreach my $key ("ACR_server", "ACR_user", "ACR_calls_directory_root", "ACR_call
   }
 }
 
-
-exit;
-
+# Save outputs
 *OLD_STDOUT = *STDOUT;
 *OLD_STDERR = *STDERR;
 
+# Redirect outputs to log file
 open my $log_fh, '>>', "$properties{'logfile'}";
 *STDOUT = $log_fh;
 *STDERR = $log_fh;
 
-print DATETIME, " Conversion utility started.\n";
+print DATETIME, " Conversion utility started, config succesfully read. Config contains: $num_acr_servers ACR servers.\n";
 
-# Create a shell script file to get list of modified files from ACR
-open REMOTE_SCRIPT, '>' , $properties{'SSH_script_temp_file'} or die DATETIME, " Failed to create shell script file to get list of modified files from ACR : $!\n";
+my $current_acr_server;
 
-# Write commands into the shell script file to get list of modified files from ACR
-print REMOTE_SCRIPT "cd $properties{'ACR_calls_directory_root'}\n";
-print REMOTE_SCRIPT "find . -name \"*.xml\" -type f -mmin -$properties{'ACR_call_download_window_minutes'}\n";
-
-close REMOTE_SCRIPT;
-
-# Execute the script remotely to detect modified voice files
-open SSH_OUTPUT, "$properties{'SSH_binary'} -T $properties{'ACR_user'}\@$properties{'ACR_server'} <$properties{'SSH_script_temp_file'} |" or die DATETIME , " Failed to execute the script remotely to detect modified voice files: $!\n";
-
-my @files_to_download;
-
-# Create a file that will hold scp download commands
-open SCP_TEMP_FILE, '>' , $properties{'SCP_script_temp_file'} or die DATETIME, " Failed to create a file that will hold scp download commands: $!\n";
-
-while (<SSH_OUTPUT>)
+#Loop through ACR servers
+for($current_acr_server = 1;$current_acr_server<=$num_acr_servers;$current_acr_server++)
 {
-  chomp;
+  print DATETIME, " Start processing ACR server #$current_acr_server: \"$acr_servers[$current_acr_server]{'ACR_server'}\".\n";
 
-  # Put XML file name in downloader shell script
-  s/.\/(.*)/$1/;
-  print SCP_TEMP_FILE "$properties{'SCP_binary'} $properties{'ACR_user'}\@$properties{'ACR_server'}:$properties{'ACR_calls_directory_root'}$_ $properties{'SCP_download_temp_target_dir'}\n";
+  # Create a shell script file to get list of modified files from ACR
+  open REMOTE_SCRIPT, '>' , $properties{'SSH_script_temp_file'} or die DATETIME, " Failed to create shell script file to get list of modified files from ACR : $!\n";
 
-  # Store XML file name for tag extraction
-  push @files_to_download, $_;
-  
-  # Put WAV file name in downloader shell script
-  s/(.*)\.xml$/$1.wav/;
-  print SCP_TEMP_FILE "$properties{'SCP_binary'} $properties{'ACR_user'}\@$properties{'ACR_server'}:$properties{'ACR_calls_directory_root'}$_ $properties{'SCP_download_temp_target_dir'}\n";
-}
+  # Write commands into the shell script file to get list of modified files from ACR
+  print REMOTE_SCRIPT "cd $acr_servers[$current_acr_server]{'ACR_calls_directory_root'}\n";
+  print REMOTE_SCRIPT "find . -name \"*.xml\" -type f -mmin -$acr_servers[$current_acr_server]{'ACR_call_download_window_minutes'}\n";
 
-my $scp_script_size = tell SCP_TEMP_FILE;
+  close REMOTE_SCRIPT;
 
-# Close files and remove temp file for SSH
-close SSH_OUTPUT;
-close SCP_TEMP_FILE;
-unlink($properties{'SSH_script_temp_file'}) == 1 or warn DATETIME, " Failed to remove temp file for SSH: $!\n";
+  # Execute the script remotely to detect modified voice files
+  open SSH_OUTPUT, "$properties{'SSH_binary'} -T $acr_servers[$current_acr_server]{'ACR_user'}\@$acr_servers[$current_acr_server]{'ACR_server'} <$properties{'SSH_script_temp_file'} |" or die DATETIME , " Failed to execute the script remotely to detect modified voice files: $!\n";
 
-if ($scp_script_size >0)
-{
-  # Download the voice files for conversion by executing the download shell script prepared previously
-  system("$properties{'BASH_binary'} $properties{'SCP_script_temp_file'}") == 0 or die DATETIME, " Failed to download the voice files for conversion by executing the download shell script prepared previously: $!\n";
+  my @files_to_download;
 
-  # Remove the downloader shell script file
-  unlink($properties{'SCP_script_temp_file'}) == 1 or warn DATETIME, " Failed to remove the downloader shell script file: $!\n";
+  # Create a file that will hold scp download commands
+  open SCP_TEMP_FILE, '>' , $properties{'SCP_script_temp_file'} or die DATETIME, " Failed to create a file that will hold scp download commands: $!\n";
 
-  # Create the temp shell script file for segmentation
-  open SEGMENTATION_TEMP_SCRIPT_FILE, '>' , $properties{'segmentation_script_temp_file'} or die DATETIME,  " Failed to create the temp shell script file for segmentation: $!\n";
-  print SEGMENTATION_TEMP_SCRIPT_FILE "#!$properties{'BASH_binary'}\ncd $properties{'output_directory'}\n";
-
-  my $wav_file_to_convert;
-
-  # Loop through each xml file downloaded
-  foreach (@files_to_download)
+  while (<SSH_OUTPUT>)
   {
-      # Create the correct path of the XML file where scp downloaded it
-      s/^.*\/(\w*.xml)/$properties{'SCP_download_temp_target_dir'}$1/;
+    chomp;
 
-      # Create the correct path of the WAV file where scp downloaded it for potential conversion later
-      $wav_file_to_convert = $_;
-      $wav_file_to_convert =~ s/^(.*).xml$/$1.wav/;
+    # Put XML file name in downloader shell script
+    s/.\/(.*)/$1/;
+    print SCP_TEMP_FILE "$properties{'SCP_binary'} $acr_servers[$current_acr_server]{'ACR_user'}\@$acr_servers[$current_acr_server]{'ACR_server'}:$acr_servers[$current_acr_server]{'ACR_calls_directory_root'}$_ $properties{'SCP_download_temp_target_dir'}\n";
 
-      open XMLFILE, $_;
-
-      my $file_needs_conversion = 0;
-      my $segmentation_rule = "";
-      
-      # Parse the XML file to see if the recording is closed and to extract splitting parameters
-      while (<XMLFILE>)
-      {
-        chomp;
-        # File is eligible for conversion if the <noend> tag holds a "false" value
-        /<noend>false<\/noend>/ and $file_needs_conversion = 1;
-
-        # Find the segmentation tag and extract segmentation rules
-        if (/<$properties{'segmentation_tag'}>(.*)<\/$properties{'segmentation_tag'}>/)
-        {
-          s/<$properties{'segmentation_tag'}>(.*)<\/$properties{'segmentation_tag'}>/$1/;
-          s/,/ /g;
-          $segmentation_rule = $_;
-        }
-      }
-      close XMLFILE;
-      
-      $file_needs_conversion and print SEGMENTATION_TEMP_SCRIPT_FILE "$properties{'mp3slpitter_command'} $wav_file_to_convert $segmentation_rule\n";
-      print DATETIME, " Voice file: $wav_file_to_convert still recording. No conversion performed.\n" unless $file_needs_conversion;
+    # Store XML file name for tag extraction
+    push @files_to_download, $_;
+    
+    # Put WAV file name in downloader shell script
+    s/(.*)\.xml$/$1.wav/;
+    print SCP_TEMP_FILE "$properties{'SCP_binary'} $acr_servers[$current_acr_server]{'ACR_user'}\@$acr_servers[$current_acr_server]{'ACR_server'}:$acr_servers[$current_acr_server]{'ACR_calls_directory_root'}$_ $properties{'SCP_download_temp_target_dir'}\n";
   }
-  
-  my $segmentation_script_size = tell SEGMENTATION_TEMP_SCRIPT_FILE;
-  
-  close SEGMENTATION_TEMP_SCRIPT_FILE;
 
-  if ($segmentation_script_size > 0)
+  my $scp_script_size = tell SCP_TEMP_FILE;
+
+  # Close files and remove temp file for SSH
+  close SSH_OUTPUT;
+  close SCP_TEMP_FILE;
+  unlink($properties{'SSH_script_temp_file'}) == 1 or warn DATETIME, " Failed to remove temp file for SSH: $!\n";
+
+  if ($scp_script_size >0)
   {
-    # Perform file conversion and splitting
-    system ("$properties{'BASH_binary'} $properties{'segmentation_script_temp_file'}") == 0 or die DATETIME, " Failed to perform file conversion and splitting: $!\n";
+    # Download the voice files for conversion by executing the download shell script prepared previously
+    system("$properties{'BASH_binary'} $properties{'SCP_script_temp_file'}") == 0 or die DATETIME, " Failed to download the voice files for conversion by executing the download shell script prepared previously: $!\n";
 
-    # Remove temp segmentation and conversion script file
-    unlink($properties{'segmentation_script_temp_file'}) == 1 or warn DATETIME, " Failed to remove temp segmentation and conversion script file: $!\n";
+    # Remove the downloader shell script file
+    unlink($properties{'SCP_script_temp_file'}) == 1 or warn DATETIME, " Failed to remove the downloader shell script file: $!\n";
 
-    # Remove downloaded voice and xml files
+    # Create the temp shell script file for segmentation
+    open SEGMENTATION_TEMP_SCRIPT_FILE, '>' , $properties{'segmentation_script_temp_file'} or die DATETIME,  " Failed to create the temp shell script file for segmentation: $!\n";
+    print SEGMENTATION_TEMP_SCRIPT_FILE "#!$properties{'BASH_binary'}\ncd $properties{'output_directory'}\n";
 
-    system("$properties{'RM_binary'} -f $properties{'SCP_download_temp_target_dir'}/*.xml") == 0 or warn DATETIME, " Failed to remove downloaded xml files: $!\n";
-    system("$properties{'RM_binary'} -f $properties{'SCP_download_temp_target_dir'}/*.wav") == 0 or warn DATETIME, " Failed to remove downloaded voice files: $!\n";
+    my $wav_file_to_convert;
 
-    print DATETIME, " Conversion done: exiting cleanly.\n";
+    # Loop through each xml file downloaded
+    foreach (@files_to_download)
+    {
+	# Create the correct path of the XML file where scp downloaded it
+	s/^.*\/(\w*.xml)/$properties{'SCP_download_temp_target_dir'}$1/;
+
+	# Create the correct path of the WAV file where scp downloaded it for potential conversion later
+	$wav_file_to_convert = $_;
+	$wav_file_to_convert =~ s/^(.*).xml$/$1.wav/;
+
+	open XMLFILE, $_;
+
+	my $file_needs_conversion = 0;
+	my $segmentation_rule = "";
+	
+	# Parse the XML file to see if the recording is closed and to extract splitting parameters
+	while (<XMLFILE>)
+	{
+	  chomp;
+	  # File is eligible for conversion if the <noend> tag holds a "false" value
+	  /<noend>false<\/noend>/ and $file_needs_conversion = 1;
+
+	  # Find the segmentation tag and extract segmentation rules
+	  if (/<$properties{'segmentation_tag'}>(.*)<\/$properties{'segmentation_tag'}>/)
+	  {
+	    s/<$properties{'segmentation_tag'}>(.*)<\/$properties{'segmentation_tag'}>/$1/;
+	    s/,/ /g;
+	    $segmentation_rule = $_;
+	  }
+	}
+	close XMLFILE;
+	
+	$file_needs_conversion and print SEGMENTATION_TEMP_SCRIPT_FILE "$properties{'mp3slpitter_command'} $wav_file_to_convert $segmentation_rule\n";
+	print DATETIME, " Voice file: $wav_file_to_convert still recording. No conversion performed.\n" unless $file_needs_conversion;
+    }
+    
+    my $segmentation_script_size = tell SEGMENTATION_TEMP_SCRIPT_FILE;
+    
+    close SEGMENTATION_TEMP_SCRIPT_FILE;
+
+    if ($segmentation_script_size > 0)
+    {
+      # Perform file conversion and splitting
+      system ("$properties{'BASH_binary'} $properties{'segmentation_script_temp_file'}") == 0 or die DATETIME, " Failed to perform file conversion and splitting: $!\n";
+
+      # Remove temp segmentation and conversion script file
+      unlink($properties{'segmentation_script_temp_file'}) == 1 or warn DATETIME, " Failed to remove temp segmentation and conversion script file: $!\n";
+
+      # Remove downloaded voice and xml files
+
+      system("$properties{'RM_binary'} -f $properties{'SCP_download_temp_target_dir'}/*.xml") == 0 or warn DATETIME, " Failed to remove downloaded xml files: $!\n";
+      system("$properties{'RM_binary'} -f $properties{'SCP_download_temp_target_dir'}/*.wav") == 0 or warn DATETIME, " Failed to remove downloaded voice files: $!\n";
+
+      print DATETIME, " Conversion done: for ACR server #$current_acr_server: $acr_servers[$current_acr_server]{'ACR_server'}.\n";
+    } else {
+      # Remove temp segmentation and conversion script file
+      unlink($properties{'segmentation_script_temp_file'}) == 1 or warn DATETIME, " Failed to remove empty temp segmentation and conversion script file: $!\n";
+
+      print DATETIME, " No downloaded files need conversion for ACR server #$current_acr_server: \"$acr_servers[$current_acr_server]{'ACR_server'}\" - all in recording.\n";
+    }
   } else {
-    # Remove temp segmentation and conversion script file
-    unlink($properties{'segmentation_script_temp_file'}) == 1 or warn DATETIME, " Failed to remove empty temp segmentation and conversion script file: $!\n";
-
-    print DATETIME, " No downloaded files need conversion - all in recording: exiting cleanly.\n";
+    print DATETIME, " No voice files match download criteria for ACR server #$current_acr_server: \"$acr_servers[$current_acr_server]{'ACR_server'}\".\n";
   }
-} else {
-  print DATETIME, " No voice files match download criteria: exiting cleanly\n";
 }
 
+print DATETIME, " Finished for all $num_acr_servers configured ACR servers: Exiting cleanly\n";
+
+# Restore original saved outputs
 *STDOUT = *OLD_STDOUT;
 *STDERR = *OLD_STDERR;
