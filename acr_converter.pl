@@ -4,20 +4,87 @@ use strict;
 use warnings;
 use POSIX;
 use constant DATETIME => strftime("%d/%m/%Y %H:%M:%S", localtime);
- 
+
 my $name;
 my $val;
 my %properties;
+my @acr_servers;
 
 # Read configuration parameters from conf file
 open CONFIG, '<', 'acr_converter.conf' or die DATETIME, " Failed to open config file /etc/acr_converter.conf : $!\n";
+
+my $config_linenum = 0;
+my $config_section = "NONE";
+my $global_configured = 0;
+my $num_acr_servers = 0;
+
 while (<CONFIG>)
   {
-    ($name,$val)=m/(\w+)\s*=(.+)/;
-    $properties{$name}=$val;
+  $config_linenum++;
+   unless ( m/^\s*#.*$/ or m/^\s*$/)
+   {
+    if($config_section eq "NONE")
+    {
+      if (!$global_configured)
+      {
+	m/^\s*\[Global\]\s*$/ or die  DATETIME, " Error in config file. Config does not start with a [Global] section at line number: $config_linenum\n";
+	$config_section = "GLOBAL";
+      } else {
+	m/^\s*\[ACR_server\]\s*$/ or die  DATETIME, " Error in config file. Invalid section start: the [Global] section must be followed by one or more [ACR_Server] sections at line number: $config_linenum\n";
+	$config_section = "ACR_SERVER";
+	$num_acr_servers++;
+      }
+    } elsif ($config_section eq "GLOBAL") {
+      if (m/\s*\w+\s*=\s*.+\s*/)
+      {
+	($name,$val)=m/\s*(\w+)\s*=\s*(.+)\s*/;
+	$properties{$name}=$val;
+	print $name," = ",$val,"\n";
+      } elsif (m/^\s*\[END Global\]\s*$/) {
+	$global_configured = 1;
+	$config_section = "NONE";
+      } else {
+	die DATETIME, " Invalid config file entry at line number: $config_linenum\n";
+      }
+    } elsif ($config_section eq "ACR_SERVER") {
+      if (m/\s*\w+\s*=\s*.+\s*/)
+      {
+	($name,$val)=m/\s*(\w+)\s*=\s*(.+)\s*/;
+	$acr_servers[$num_acr_servers]{$name}=$val;
+	print "ACR_server num $num_acr_servers: ", $name," = ",$val,"\n";
+      } elsif (m/^\s*\[END ACR_server\]\s*$/) {
+	$config_section = "NONE";
+      } else {
+	die DATETIME, " Invalid config file entry at line number: $config_linenum\n";
+      }
+    
+    }
+   }
   }
-
 close(CONFIG);
+
+$config_section eq "NONE" or die DATETIME, " Error in config file. Unterminated section at the end of file.\n";
+if ($num_acr_servers == 0)
+{
+  print DATETIME, " No ACR servers configured: exiting cleanly\n";
+  exit 0;
+}
+
+foreach my $key ("SCP_script_temp_file", "SCP_download_temp_target_dir", "SSH_script_temp_file", "segmentation_tag", "segmentation_script_temp_file", "output_directory", "mp3slpitter_command", "SSH_binary", "SCP_binary", "BASH_binary", "RM_binary", "logfile")
+{
+  $properties{$key} or die DATETIME, " Error: Required global parameter $key is not defined in config file.\n";
+}
+
+foreach my $key ("ACR_server", "ACR_user", "ACR_calls_directory_root", "ACR_call_download_window_minutes")
+{
+  for(my $i=1; $i<=$num_acr_servers;$i++)
+  {
+    $acr_servers[$i]{$key} or die DATETIME, " Error: Required ACR server parameter: \"$key\" is not defined in config file for [ACR_server] section number $i.\n";
+  }
+}
+
+
+exit;
 
 *OLD_STDOUT = *STDOUT;
 *OLD_STDERR = *STDERR;
