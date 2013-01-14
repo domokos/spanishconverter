@@ -97,7 +97,7 @@ open my $log_fh, '>>', "$properties{'logfile'}";
 *STDOUT = $log_fh;
 *STDERR = $log_fh;
 
-print DATETIME, " Conversion utility started, config succesfully read. Config contains: $num_acr_servers ACR servers.\n";
+print DATETIME, " Conversion utility started, config succesfully read: contains $num_acr_servers ACR servers.\n";
 
 my $current_acr_server;
 
@@ -221,11 +221,11 @@ for($current_acr_server = 1;$current_acr_server<=$num_acr_servers;$current_acr_s
       print DATETIME, " No downloaded files need conversion for ACR server #$current_acr_server: \"$acr_servers[$current_acr_server]{'ACR_server'}\" - all in recording.\n";
     }
   } else {
-    print DATETIME, " No voice files match download criteria for ACR server #$current_acr_server: \"$acr_servers[$current_acr_server]{'ACR_server'}\".\n";
+    print DATETIME, " No voice files match configured criteria: \"Last modified $acr_servers[$current_acr_server]{'ACR_call_download_window_minutes'} min(s) ago\" for ACR server #$current_acr_server: \"$acr_servers[$current_acr_server]{'ACR_server'}\".\n";
   }
 }
 
-print DATETIME, " Finished for all $num_acr_servers configured ACR servers: Exiting cleanly\n";
+print DATETIME, " Finished processing all $num_acr_servers configured ACR servers: Exiting cleanly\n";
 
 # Restore original saved outputs
 *STDOUT = *OLD_STDOUT;
