@@ -86,7 +86,7 @@ if ($num_acr_servers == 0)
 # Check required General parameters
 foreach my $key ("SCP_script_temp_file", "SCP_download_temp_target_dir", "SSH_script_temp_file", "segmentation_tag", "segmentation_script_temp_file", "output_directory", "mp3slpitter_command", "SSH_binary", "SCP_binary", "BASH_binary", "RM_binary", "logfile")
 {
-  $properties{$key} or die DATETIME, " Error: Required global parameter $key is not defined in config file $configfilepath.\n";
+  $properties{$key} or die DATETIME, " Error: Required global parameter \"$key\" is not defined in config file $configfilepath.\n";
 }
 
 # Check required ACR server parameters
@@ -103,16 +103,16 @@ foreach my $key ("ACR_server", "ACR_user", "ACR_calls_directory_root", "ACR_call
 *OLD_STDERR = *STDERR;
 
 # Redirect outputs to log file
-open my $log_fh, '>>', "$properties{'logfile'}";
+open my $log_fh, '>>', "$properties{'logfile'}" or die DATETIME, " Falied to open logfile \"$properties{'logfile'}\" for appending: $!";
 *STDOUT = $log_fh;
 *STDERR = $log_fh;
 
-print DATETIME, " Conversion utility started, config succesfully read from $configfilepath: contains $num_acr_servers ACR servers.\n";
+print DATETIME, " Conversion utility started, config read from $configfilepath: contains $num_acr_servers ACR servers.\n";
 
 my $current_acr_server;
 
 #Loop through ACR servers
-for($current_acr_server = 1;$current_acr_server<=$num_acr_servers;$current_acr_server++)
+for($current_acr_server = 1; $current_acr_server<=$num_acr_servers; $current_acr_server++)
 {
   print DATETIME, " Start processing ACR server #$current_acr_server: \"$acr_servers[$current_acr_server]{'ACR_server'}\".\n";
 
