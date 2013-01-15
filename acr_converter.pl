@@ -4,14 +4,24 @@ use strict;
 use warnings;
 use POSIX;
 use constant DATETIME => strftime("%d/%m/%Y %H:%M:%S", localtime);
+use Cwd;
 
 my $name;
 my $val;
 my %properties;
 my @acr_servers;
+my $configfilepath;
 
 # Read configuration parameters from conf file
-open CONFIG, '<', 'acr_converter.conf' or die DATETIME, " Failed to open config file /etc/acr_converter.conf : $!\n";
+if (open CONFIG, '<', '/etc/acr_converter.conf') {
+  $configfilepath = '/etc/acr_converter.conf';
+}elsif (open CONFIG, '<', '~/acr_converter.conf') {
+  $configfilepath = '~/acr_converter.conf';
+}elsif (open CONFIG, '<', 'acr_converter.conf') {
+  $configfilepath = cwd() . '/acr_converter.conf';
+}else { 
+die DATETIME, " Failed to open config file acr_converter.conf from /etc or from ~/ or from pwd: $!\n";
+}
 
 my $config_linenum = 0;
 my $config_section = "NONE";
@@ -30,10 +40,10 @@ while (<CONFIG>)
     {
       if (!$global_configured)
       {
-	m/^\s*\[Global\]\s*$/ or die  DATETIME, " Error in config file. Config does not start with a [Global] section at line number: $config_linenum\n";
+	m/^\s*\[Global\]\s*$/ or die  DATETIME, " Error in config file $configfilepath. Config does not start with a [Global] section at line number: $config_linenum\n";
 	$config_section = "GLOBAL";
       } else {
-	m/^\s*\[ACR_server\]\s*$/ or die  DATETIME, " Error in config file. Expecting [ACR_server] or end of file: the [Global] section must be followed by zero or more [ACR_Server] sections at line number: $config_linenum\n";
+	m/^\s*\[ACR_server\]\s*$/ or die  DATETIME, " Error in config file $configfilepath. Expecting [ACR_server] or end of file: the [Global] section must be followed by zero or more [ACR_Server] sections at line number: $config_linenum\n";
 	$config_section = "ACR_SERVER";
 	$num_acr_servers++;
       }
@@ -47,7 +57,7 @@ while (<CONFIG>)
 	$global_configured = 1;
 	$config_section = "NONE";
       } else {
-	die DATETIME, " Invalid config file entry at line number: $config_linenum\n";
+	die DATETIME, " Invalid config file entry in $configfilepath at line number: $config_linenum\n";
       }
     # Reading ACR_SERVER section
     } elsif ($config_section eq "ACR_SERVER") {
@@ -58,7 +68,7 @@ while (<CONFIG>)
       } elsif (m/^\s*\[END ACR_server\]\s*$/) {
 	$config_section = "NONE";
       } else {
-	die DATETIME, " Invalid config file entry at line number: $config_linenum\n";
+	die DATETIME, " Invalid config file entry in $configfilepath at line number: $config_linenum\n";
       }
     }
    }
@@ -66,17 +76,17 @@ while (<CONFIG>)
 close(CONFIG);
 
 # Cross-check validity of config file contents
-$config_section eq "NONE" or die DATETIME, " Error in config file. Unterminated section at the end of file.\n";
+$config_section eq "NONE" or die DATETIME, " Error in config file $configfilepath. Unterminated section at the end of file.\n";
 if ($num_acr_servers == 0)
 {
-  print DATETIME, " No ACR servers configured: Exiting cleanly\n";
+  print DATETIME, " No ACR servers configured in $configfilepath: Exiting cleanly\n";
   exit 0;
 }
 
 # Check required General parameters
 foreach my $key ("SCP_script_temp_file", "SCP_download_temp_target_dir", "SSH_script_temp_file", "segmentation_tag", "segmentation_script_temp_file", "output_directory", "mp3slpitter_command", "SSH_binary", "SCP_binary", "BASH_binary", "RM_binary", "logfile")
 {
-  $properties{$key} or die DATETIME, " Error: Required global parameter $key is not defined in config file.\n";
+  $properties{$key} or die DATETIME, " Error: Required global parameter $key is not defined in config file $configfilepath.\n";
 }
 
 # Check required ACR server parameters
@@ -84,7 +94,7 @@ foreach my $key ("ACR_server", "ACR_user", "ACR_calls_directory_root", "ACR_call
 {
   for(my $i=1; $i<=$num_acr_servers;$i++)
   {
-    $acr_servers[$i]{$key} or die DATETIME, " Error: Required ACR server parameter: \"$key\" is not defined in config file for [ACR_server] section number $i.\n";
+    $acr_servers[$i]{$key} or die DATETIME, " Error: Required ACR server parameter: \"$key\" is not defined in config file $configfilepath for [ACR_server] section number $i.\n";
   }
 }
 
@@ -97,7 +107,7 @@ open my $log_fh, '>>', "$properties{'logfile'}";
 *STDOUT = $log_fh;
 *STDERR = $log_fh;
 
-print DATETIME, " Conversion utility started, config succesfully read: contains $num_acr_servers ACR servers.\n";
+print DATETIME, " Conversion utility started, config succesfully read from $configfilepath: contains $num_acr_servers ACR servers.\n";
 
 my $current_acr_server;
 
