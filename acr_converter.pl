@@ -13,19 +13,19 @@ my @acr_servers;
 my $configfilepath;
 
 # Read configuration parameters from conf file
-if (open CONFIG, '<', '/etc/acr_converter.conf') {
-  $configfilepath = '/etc/acr_converter.conf';
+if (open CONFIG, '<', 'acr_converter.conf') {
+  $configfilepath = cwd() . '/acr_converter.conf';
 }elsif (open CONFIG, '<', '~/acr_converter.conf') {
   $configfilepath = '~/acr_converter.conf';
-}elsif (open CONFIG, '<', 'acr_converter.conf') {
-  $configfilepath = cwd() . '/acr_converter.conf';
+}elsif (open CONFIG, '<', '/etc/acr_converter.conf') {
+  $configfilepath = '/etc/acr_converter.conf';
 }else { 
 die DATETIME, " Failed to open config file acr_converter.conf from /etc or from ~/ or from pwd: $!\n";
 }
 
 my $config_linenum = 0;
 my $config_section = "NONE";
-my $global_configured = 0;
+my $is_global_configured = 0;
 my $num_acr_servers = 0;
 
 # Read the config file
@@ -35,10 +35,10 @@ while (<CONFIG>)
    unless ( m/^\s*#.*$/ or m/^\s*$/)
    {
    # Branch states of config file processing and set parameter variables accordingly
-   # Reading outside of any secrions
+   # Reading outside of any sections
     if($config_section eq "NONE")
     {
-      if (!$global_configured)
+      if (!$is_global_configured)
       {
 	m/^\s*\[Global\]\s*$/ or die  DATETIME, " Error in config file $configfilepath. Config does not start with a [Global] section at line number: $config_linenum\n";
 	$config_section = "GLOBAL";
@@ -54,7 +54,7 @@ while (<CONFIG>)
 	($name,$val)=m/\s*(\w+)\s*=\s*(.+)\s*/;
 	$properties{$name}=$val;
       } elsif (m/^\s*\[END Global\]\s*$/) {
-	$global_configured = 1;
+	$is_global_configured = 1;
 	$config_section = "NONE";
       } else {
 	die DATETIME, " Invalid config file entry in $configfilepath at line number: $config_linenum\n";
@@ -94,7 +94,7 @@ foreach my $key ("ACR_server", "ACR_user", "ACR_calls_directory_root", "ACR_call
 {
   for(my $i=1; $i<=$num_acr_servers;$i++)
   {
-    $acr_servers[$i]{$key} or die DATETIME, " Error: Required ACR server parameter: \"$key\" is not defined in config file $configfilepath for [ACR_server] section number $i.\n";
+    $acr_servers[$i]{$key} or die DATETIME, " Error: Required ACR server parameter: \"$key\" is not defined in config file $configfilepath in [ACR_server] section #$i.\n";
   }
 }
 
@@ -180,7 +180,7 @@ for($current_acr_server = 1; $current_acr_server<=$num_acr_servers; $current_acr
 	$wav_file_to_convert = $_;
 	$wav_file_to_convert =~ s/^(.*).xml$/$1.wav/;
 
-	open XMLFILE, $_;
+	open XMLFILE, $_ or die DATETIME, " Failed to open xml file downloaded previously with scp: $!\n";
 
 	my $file_needs_conversion = 0;
 	my $segmentation_rule = "";
