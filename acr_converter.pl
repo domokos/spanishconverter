@@ -51,8 +51,9 @@ while (<CONFIG>)
     } elsif ($config_section eq "GLOBAL") {
       if (m/\s*\w+\s*=\s*.+\s*/)
       {
-	($name,$val)=m/\s*(\w+)\s*=\s*(.+)\s*/;
+	($name,$val)=m/\s*(\w+)\s*=\s*(.+)\s*$/;
 	$properties{$name}=$val;
+	print $name,": ",$val,"\n";
       } elsif (m/^\s*\[END Global\]\s*$/) {
 	$is_global_configured = 1;
 	$config_section = "NONE";
@@ -63,7 +64,7 @@ while (<CONFIG>)
     } elsif ($config_section eq "ACR_SERVER") {
       if (m/\s*\w+\s*=\s*.+\s*/)
       {
-	($name,$val)=m/\s*(\w+)\s*=\s*(.+)\s*/;
+	($name,$val)=m/\s*(\w+)\s*=\s*(.+)\s*$/;
 	$acr_servers[$num_acr_servers]{$name}=$val;
       } elsif (m/^\s*\[END ACR_server\]\s*$/) {
 	$config_section = "NONE";
@@ -84,7 +85,7 @@ if ($num_acr_servers == 0)
 }
 
 # Check required General parameters
-foreach my $key ("SCP_script_temp_file", "SCP_download_temp_target_dir", "SSH_script_temp_file", "segmentation_tag", "segmentation_script_temp_file", "output_directory", "mp3slpitter_command", "SSH_binary", "SCP_binary", "BASH_binary", "RM_binary", "logfile")
+foreach my $key ("SCP_script_temp_file", "SCP_download_temp_target_dir", "SSH_script_temp_file", "segmentation_tag", "segmentation_script_temp_file", "output_directory", "mp3slpitter_command", "lame_parameters", "SSH_binary", "SCP_binary", "BASH_binary", "RM_binary", "logfile")
 {
   $properties{$key} or die DATETIME, " Error: Required global parameter \"$key\" is not defined in config file $configfilepath.\n";
 }
@@ -97,7 +98,7 @@ foreach my $key ("ACR_server", "ACR_user", "ACR_calls_directory_root", "ACR_call
     $acr_servers[$i]{$key} or die DATETIME, " Error: Required ACR server parameter: \"$key\" is not defined in config file $configfilepath in [ACR_server] section #$i.\n";
   }
 }
-
+exit;
 # Save outputs
 *OLD_STDOUT = *STDOUT;
 *OLD_STDERR = *STDERR;
