@@ -53,7 +53,6 @@ while (<CONFIG>)
       {
 	($name,$val)=m/\s*(\w+)\s*=\s*(.+)\s*$/;
 	$properties{$name}=$val;
-	print $name,": ",$val,"\n";
       } elsif (m/^\s*\[END Global\]\s*$/) {
 	$is_global_configured = 1;
 	$config_section = "NONE";
@@ -85,7 +84,7 @@ if ($num_acr_servers == 0)
 }
 
 # Check required General parameters
-foreach my $key ("SCP_script_temp_file", "SCP_download_temp_target_dir", "SSH_script_temp_file", "segmentation_tag", "segmentation_script_temp_file", "output_directory", "mp3slpitter_command", "lame_parameters", "SSH_binary", "SCP_binary", "BASH_binary", "RM_binary", "logfile")
+foreach my $key ("SCP_script_temp_file", "SCP_download_temp_target_dir", "SSH_script_temp_file", "segmentation_tag", "segmentation_script_temp_file", "output_directory", "mp3slpitter_command", "lame_parameters", "debug", "SSH_binary", "SCP_binary", "BASH_binary", "RM_binary", "LAME_binary", "logfile")
 {
   $properties{$key} or die DATETIME, " Error: Required global parameter \"$key\" is not defined in config file $configfilepath.\n";
 }
@@ -98,7 +97,11 @@ foreach my $key ("ACR_server", "ACR_user", "ACR_calls_directory_root", "ACR_call
     $acr_servers[$i]{$key} or die DATETIME, " Error: Required ACR server parameter: \"$key\" is not defined in config file $configfilepath in [ACR_server] section #$i.\n";
   }
 }
-exit;
+
+
+select STDERR; $| = 1;  # make unbuffered
+select STDOUT; $| = 1;  # make unbuffered
+
 # Save outputs
 *OLD_STDOUT = *STDOUT;
 *OLD_STDERR = *STDERR;
@@ -107,6 +110,8 @@ exit;
 open my $log_fh, '>>', "$properties{'logfile'}" or die DATETIME, " Falied to open logfile \"$properties{'logfile'}\" for appending: $!";
 *STDOUT = $log_fh;
 *STDERR = $log_fh;
+
+select $log_fh; $| = 1;  # make unbuffered
 
 print DATETIME, " Conversion utility started, config read from $configfilepath: contains $num_acr_servers ACR servers.\n";
 
@@ -160,7 +165,12 @@ for($current_acr_server = 1; $current_acr_server<=$num_acr_servers; $current_acr
   if ($scp_script_size >0)
   {
     # Download the voice files for conversion by executing the download shell script prepared previously
-    system("$properties{'BASH_binary'} $properties{'SCP_script_temp_file'}") == 0 or die DATETIME, " Failed to download the voice files for conversion by executing the download shell script prepared previously: $!\n";
+    if ($properties{'debug'} eq "true")
+    {
+      system("$properties{'BASH_binary'} $properties{'SCP_script_temp_file'} >>$properties{'logfile'} 2>>$properties{'logfile'}") == 0 or die DATETIME, " Failed to download the voice files for conversion by executing the download shell script prepared previously: $!\n";
+    }else{
+      system("$properties{'BASH_binary'} $properties{'SCP_script_temp_file'} >/dev/null 2>/dev/null") == 0 or die DATETIME, " Failed to download the voice files for conversion by executing the download shell script prepared previously: $!\n";
+    }
 
     # Remove the downloader shell script file
     unlink($properties{'SCP_script_temp_file'}) == 1 or warn DATETIME, " Failed to remove the downloader shell script file: $!\n";
@@ -181,7 +191,7 @@ for($current_acr_server = 1; $current_acr_server<=$num_acr_servers; $current_acr
 	$wav_file_to_convert = $_;
 	$wav_file_to_convert =~ s/^(.*).xml$/$1.wav/;
 
-	open XMLFILE, $_ or die DATETIME, " Failed to open xml file downloaded previously with scp: $!\n";
+	open XMLFILE, $_ or die DATETIME, " Failed to open xml file \"$_\" downloaded previously with scp: $!\n";
 
 	my $file_needs_conversion = 0;
 	my $segmentation_rule = "";
@@ -203,8 +213,11 @@ for($current_acr_server = 1; $current_acr_server<=$num_acr_servers; $current_acr
 	}
 	close XMLFILE;
 	
-	$file_needs_conversion and print SEGMENTATION_TEMP_SCRIPT_FILE "$properties{'mp3slpitter_command'} $wav_file_to_convert $segmentation_rule\n";
-	print DATETIME, " Voice file: $wav_file_to_convert still recording. No conversion performed.\n" unless $file_needs_conversion;
+	$file_needs_conversion and print SEGMENTATION_TEMP_SCRIPT_FILE "$properties{'mp3slpitter_command'} $wav_file_to_convert $properties{'LAME_binary'} \"$properties{'lame_parameters'}\" $properties{'RM_binary'} $segmentation_rule\n";
+	if ($properties{'debug'} eq "true")
+	{
+	  print DATETIME, " Voice file: $wav_file_to_convert still recording. No conversion performed.\n" unless $file_needs_conversion
+	}
     }
     
     my $segmentation_script_size = tell SEGMENTATION_TEMP_SCRIPT_FILE;
@@ -214,7 +227,12 @@ for($current_acr_server = 1; $current_acr_server<=$num_acr_servers; $current_acr
     if ($segmentation_script_size > 0)
     {
       # Perform file conversion and splitting
-      system ("$properties{'BASH_binary'} $properties{'segmentation_script_temp_file'}") == 0 or die DATETIME, " Failed to perform file conversion and splitting: $!\n";
+      if ($properties{'debug'} eq "true")
+      {
+	system ("$properties{'BASH_binary'} $properties{'segmentation_script_temp_file'} >>$properties{'logfile'} 2>>$properties{'logfile'}") == 0 or die DATETIME, " Failed to perform file conversion and splitting: $!\n";
+      }else{
+	system ("$properties{'BASH_binary'} $properties{'segmentation_script_temp_file'} >>/dev/null 2>>/dev/null") == 0 or die DATETIME, " Failed to perform file conversion and splitting: $!\n";
+      }
 
       # Remove temp segmentation and conversion script file
       unlink($properties{'segmentation_script_temp_file'}) == 1 or warn DATETIME, " Failed to remove temp segmentation and conversion script file: $!\n";
