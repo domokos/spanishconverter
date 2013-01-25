@@ -84,7 +84,7 @@ if ($num_acr_servers == 0)
 }
 
 # Check required General parameters
-foreach my $key ("SCP_script_temp_file", "SCP_download_temp_target_dir", "SSH_script_temp_file", "segmentation_tag", "segmentation_script_temp_file", "output_directory", "slpitter_binary", "encoder_parameters", "debug", "SSH_binary", "SCP_binary", "BASH_binary", "RM_binary", "encoder_binary", "logfile")
+foreach my $key ("SCP_script_temp_file", "SCP_download_temp_target_dir", "SSH_script_temp_file", "output_extension", "segmentation_tag", "segmentation_script_temp_file", "output_directory", "slpitter_binary", "encoder_parameters", "debug", "SSH_binary", "SCP_binary", "BASH_binary", "RM_binary", "encoder_binary", "logfile")
 {
   $properties{$key} or die DATETIME, " Error: Required global parameter \"$key\" is not defined in config file $configfilepath.\n";
 }
@@ -214,7 +214,8 @@ for($current_acr_server = 1; $current_acr_server<=$num_acr_servers; $current_acr
 	}
 	close XMLFILE;
 	
-	$file_needs_conversion and print SEGMENTATION_TEMP_SCRIPT_FILE "$properties{'slpitter_binary'} $wav_file_to_convert $properties{'encoder_binary'} \"$properties{'encoder_parameters'}\" $properties{'RM_binary'} $segmentation_rule\n" and $nr_of_files_to_split++;
+	$file_needs_conversion and print SEGMENTATION_TEMP_SCRIPT_FILE "$properties{'slpitter_binary'} $wav_file_to_convert $properties{'encoder_binary'} $properties{'output_extension'} \"$properties{'encoder_parameters'}\" $properties{'RM_binary'} $segmentation_rule\n" and $nr_of_files_to_split++;
+	print "$properties{'slpitter_binary'} $wav_file_to_convert $properties{'encoder_binary'} $properties{'output_extension'} \"$properties{'encoder_parameters'}\" $properties{'RM_binary'} $segmentation_rule\n";
 	if ($properties{'debug'} eq "true")
 	{
 	  print DATETIME, " Voice file: $wav_file_to_convert still recording. No conversion performed.\n" unless $file_needs_conversion
