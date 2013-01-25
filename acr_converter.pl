@@ -3,8 +3,9 @@
 use strict;
 use warnings;
 use POSIX;
-use constant DATETIME => strftime("%d/%m/%Y %H:%M:%S", localtime);
 use Cwd;
+
+sub DATETIME { strftime("%d/%m/%Y %H:%M:%S", localtime);}
 
 my $name;
 my $val;
