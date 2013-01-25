@@ -99,6 +99,8 @@ foreach my $key ("ACR_server", "ACR_user", "ACR_calls_directory_root", "ACR_call
   }
 }
 
+die DATETIME, " Error: parameter \"debug\" holds a value of \"$properties{'debug'}\" in config file $configfilepath in section Global. Its valid values are \"true\" and \"false\"\n" unless $properties{'debug'} eq "true" || $properties{'debug'} eq "false";
+
 
 select STDERR; $| = 1;  # make unbuffered
 select STDOUT; $| = 1;  # make unbuffered
