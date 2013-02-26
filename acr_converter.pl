@@ -85,7 +85,7 @@ if ($num_acr_servers == 0)
 }
 
 # Check required General parameters
-foreach my $key ("SCP_script_temp_file", "SCP_download_temp_target_dir", "SSH_script_temp_file", "output_extension", "segmentation_tag", "segmentation_script_temp_file", "output_directory", "slpitter_binary", "encoder_parameters", "debug", "SSH_binary", "SCP_binary", "BASH_binary", "RM_binary", "encoder_binary", "logfile")
+foreach my $key ("SCP_script_temp_file", "SCP_download_temp_target_dir", "SSH_script_temp_file", "output_filename_tag", "segmentation_tag", "segmentation_script_temp_file", "output_directory", "slpitter_binary", "encoder_parameters", "debug", "SSH_binary", "SCP_binary", "BASH_binary", "RM_binary", "encoder_binary", "logfile")
 {
   $properties{$key} or die DATETIME, " Error: Required global parameter \"$key\" is not defined in config file $configfilepath.\n";
 }
@@ -183,6 +183,7 @@ for($current_acr_server = 1; $current_acr_server<=$num_acr_servers; $current_acr
     print SEGMENTATION_TEMP_SCRIPT_FILE "#!$properties{'BASH_binary'}\ncd $properties{'output_directory'}\n";
 
     my $wav_file_to_convert;
+    my $xml_filename;
     my $nr_of_files_to_split = 0;
 
     # Loop through each xml file downloaded
@@ -192,6 +193,7 @@ for($current_acr_server = 1; $current_acr_server<=$num_acr_servers; $current_acr
 	s/^.*\/(\w*.xml)/$properties{'SCP_download_temp_target_dir'}$1/;
 
 	# Create the correct path of the WAV file where scp downloaded it for potential conversion later
+	$xml_filename = $_;
 	$wav_file_to_convert = $_;
 	$wav_file_to_convert =~ s/^(.*).xml$/$1.wav/;
 
@@ -199,6 +201,7 @@ for($current_acr_server = 1; $current_acr_server<=$num_acr_servers; $current_acr
 
 	my $file_needs_conversion = 0;
 	my $segmentation_rule = "";
+	my $output_filename = "";
 	
 	# Parse the XML file to see if the recording is closed and to extract splitting parameters
 	while (<XMLFILE>)
@@ -208,20 +211,38 @@ for($current_acr_server = 1; $current_acr_server<=$num_acr_servers; $current_acr
 	  /<noend>false<\/noend>/ and $file_needs_conversion = 1;
 
 	  # Find the segmentation tag and extract segmentation rules
-	  if (/<$properties{'segmentation_tag'}>(.*)<\/$properties{'segmentation_tag'}>/)
+	  if (/<$properties{'segmentation_tag'}>(.*?)<\/$properties{'segmentation_tag'}>/)
 	  {
-	    s/<$properties{'segmentation_tag'}>(.*)<\/$properties{'segmentation_tag'}>/$1/;
+	    s/<$properties{'segmentation_tag'}>(.*?)<\/$properties{'segmentation_tag'}>/$1/;
 	    s/,/ /g;
 	    $segmentation_rule = $_;
+	  }
+	  
+	  # Find the output filename tag and extract it
+	  if (/<$properties{'output_filename_tag'}>(.*?)<\/$properties{'output_filename_tag'}>/)
+	  {
+	    s/<$properties{'output_filename_tag'}>(.*?)<\/$properties{'output_filename_tag'}>.*/$1/;
+	    $output_filename = $_ . $properties{'output_filename_extension'};
 	  }
 	}
 	close XMLFILE;
 	
-	$file_needs_conversion and print SEGMENTATION_TEMP_SCRIPT_FILE "$properties{'slpitter_binary'} $wav_file_to_convert $properties{'encoder_binary'} $properties{'output_extension'} \"$properties{'encoder_parameters'}\" $properties{'RM_binary'} $segmentation_rule\n" and $nr_of_files_to_split++;
-	print "$properties{'slpitter_binary'} $wav_file_to_convert $properties{'encoder_binary'} $properties{'output_extension'} \"$properties{'encoder_parameters'}\" $properties{'RM_binary'} $segmentation_rule\n";
+	if ($file_needs_conversion and $output_filename eq "")
+	{
+	  warn DATETIME, " XML file $xml_filename contains no output filename tag \"$properties{'output_filename_tag'}\" defined in config file: $configfilepath. File not converted and/or split.\n";
+	  $file_needs_conversion = 0;
+	}
+	
+	$file_needs_conversion and print SEGMENTATION_TEMP_SCRIPT_FILE "$properties{'slpitter_binary'} $wav_file_to_convert $properties{'encoder_binary'} $output_filename \"$properties{'encoder_parameters'}\" $properties{'RM_binary'} $segmentation_rule\n" and $nr_of_files_to_split++;
+	
 	if ($properties{'debug'} eq "true")
 	{
-	  print DATETIME, " Voice file: $wav_file_to_convert still recording. No conversion performed.\n" unless $file_needs_conversion
+	  if ($file_needs_conversion)
+	  {
+	    print DATETIME, " Will invoke from conversion script: $properties{'slpitter_binary'} $wav_file_to_convert $properties{'encoder_binary'} $output_filename \"$properties{'encoder_parameters'}\" $properties{'RM_binary'} $segmentation_rule\n";
+	  } else {
+	    print DATETIME, " Voice file: $wav_file_to_convert still recording. No conversion performed.\n" unless $file_needs_conversion
+	  }
 	}
     }
     
@@ -234,6 +255,7 @@ for($current_acr_server = 1; $current_acr_server<=$num_acr_servers; $current_acr
       # Perform file conversion and splitting
       if ($properties{'debug'} eq "true")
       {
+	print DATETIME, " Invoking temp conversion script: \"$properties{'BASH_binary'} $properties{'segmentation_script_temp_file'}\"\n";
 	system ("$properties{'BASH_binary'} $properties{'segmentation_script_temp_file'} >>$properties{'logfile'} 2>>$properties{'logfile'}") == 0 or die DATETIME, " Failed to perform file conversion and splitting: $!\n";
       }else{
 	system ("$properties{'BASH_binary'} $properties{'segmentation_script_temp_file'} >>/dev/null 2>>/dev/null") == 0 or die DATETIME, " Failed to perform file conversion and splitting: $!\n";
@@ -252,7 +274,7 @@ for($current_acr_server = 1; $current_acr_server<=$num_acr_servers; $current_acr
       # Remove temp segmentation and conversion script file
       unlink($properties{'segmentation_script_temp_file'}) == 1 or warn DATETIME, " Failed to remove empty temp segmentation and conversion script file: $!\n";
 
-      print DATETIME, " No downloaded files need conversion for ACR server #$current_acr_server: \"$acr_servers[$current_acr_server]{'ACR_server'}\" - all in recording.\n";
+      print DATETIME, " No downloaded files need conversion for ACR server #$current_acr_server: \"$acr_servers[$current_acr_server]{'ACR_server'}\" - all in recording or errored.\n";
     }
   } else {
     print DATETIME, " No voice files match configured criteria: \"Last modified $acr_servers[$current_acr_server]{'ACR_call_download_window_minutes'} min(s) ago\" for ACR server #$current_acr_server: \"$acr_servers[$current_acr_server]{'ACR_server'}\".\n";
