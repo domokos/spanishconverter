@@ -184,6 +184,7 @@ for($current_acr_server = 1; $current_acr_server<=$num_acr_servers; $current_acr
 
     my $wav_file_to_convert;
     my $xml_filename;
+    my $fallback_output_filename;
     my $nr_of_files_to_split = 0;
 
     # Loop through each xml file downloaded
@@ -193,9 +194,9 @@ for($current_acr_server = 1; $current_acr_server<=$num_acr_servers; $current_acr
 	s/^.*\/(\w*.xml)/$properties{'SCP_download_temp_target_dir'}$1/;
 
 	# Create the correct path of the WAV file where scp downloaded it for potential conversion later
-	$xml_filename = $_;
-	$wav_file_to_convert = $_;
+	$xml_filename = $wav_file_to_convert = $fallback_output_filename = $_;
 	$wav_file_to_convert =~ s/^(.*).xml$/$1.wav/;
+	$fallback_output_filename =~ s/^(.*).xml$/$1$properties{'output_filename_extension'}/;
 
 	open XMLFILE, $_ or die DATETIME, " Failed to open xml file \"$_\" downloaded previously with scp: $!\n";
 
@@ -213,7 +214,7 @@ for($current_acr_server = 1; $current_acr_server<=$num_acr_servers; $current_acr
 	  # Find the segmentation tag and extract segmentation rules
 	  if (/<$properties{'segmentation_tag'}>(.*?)<\/$properties{'segmentation_tag'}>/)
 	  {
-	    s/<$properties{'segmentation_tag'}>(.*?)<\/$properties{'segmentation_tag'}>/$1/;
+	    s/.*<$properties{'segmentation_tag'}>(.*?)<\/$properties{'segmentation_tag'}>/$1/;
 	    s/,/ /g;
 	    $segmentation_rule = $_;
 	  }
@@ -221,7 +222,7 @@ for($current_acr_server = 1; $current_acr_server<=$num_acr_servers; $current_acr
 	  # Find the output filename tag and extract it
 	  if (/<$properties{'output_filename_tag'}>(.*?)<\/$properties{'output_filename_tag'}>/)
 	  {
-	    s/<$properties{'output_filename_tag'}>(.*?)<\/$properties{'output_filename_tag'}>.*/$1/;
+	    s/.*<$properties{'output_filename_tag'}>(.*?)<\/$properties{'output_filename_tag'}>.*/$1/;
 	    $output_filename = $_ . $properties{'output_filename_extension'};
 	  }
 	}
@@ -229,8 +230,7 @@ for($current_acr_server = 1; $current_acr_server<=$num_acr_servers; $current_acr
 	
 	if ($file_needs_conversion and $output_filename eq "")
 	{
-	  warn DATETIME, " XML file $xml_filename contains no output filename tag \"$properties{'output_filename_tag'}\" defined in config file: $configfilepath. File not converted and/or split.\n";
-	  $file_needs_conversion = 0;
+	  $output_filename = $fallback_output_filename;
 	}
 	
 	$file_needs_conversion and print SEGMENTATION_TEMP_SCRIPT_FILE "$properties{'slpitter_binary'} $wav_file_to_convert $properties{'encoder_binary'} $output_filename \"$properties{'encoder_parameters'}\" $properties{'RM_binary'} $segmentation_rule\n" and $nr_of_files_to_split++;
